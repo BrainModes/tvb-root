@@ -91,14 +91,14 @@ class Polynomial(Model):
     state_variable_range = Attr(
         field_type=dict,
         label="State Variable ranges [lo, hi]",
-        default={"x1": numpy.array([-1, 1])},
+        default={"x": numpy.array([-1, 1])},
         doc="Range used for state variable initialization and visualization.")
 
     variables_of_interest = List(
         of=str,
         label="Variables watched by Monitors",
-        choices=("x1",),
-        default=("x1",), )
+        choices=("x",),
+        default=("x",), )
 
     coupling_terms = List(
         label="Coupling terms",
@@ -107,10 +107,11 @@ class Polynomial(Model):
     )
 
     state_variable_dfuns = Attr(
+        field_type=dict,
         label="Drift functions",
-        default=[{
-            "x1": "lamda * (p0 + p1*x1)",
-        }]
+        default={
+            "x": "lamda * (p0 + p1*x)",
+        }
     )
 
     parameter_names = List(
@@ -118,7 +119,7 @@ class Polynomial(Model):
         label="List of parameters for this model",
         default=tuple('lamda p p0 p1'.split()))
 
-    state_variables = ('x1',)
+    state_variables = ('x',)
     non_integrated_variables = None
     _nvar = 1
     cvar = numpy.array([0], dtype=numpy.int32)
@@ -141,11 +142,11 @@ class Polynomial(Model):
             self.p0 = self.p[:, :, 0]
         self.p1 = self.p[:, :, 1]
         self.cvar = numpy.arange(self._nvar, dtype=numpy.int32)
-        state_variables = list(["x1"])
+        state_variables = list(["x"])
         non_integrated_variables = list()
         default_sv_range = self.state_variable_range[self.state_variables[0]]
-        state_variable_range = {"x1": default_sv_range}
-        state_variable_dfuns = ["lamda * (p0 + p1*x1"]
+        state_variable_range = {"x": default_sv_range}
+        state_variable_dfuns = "lamda * (p0 + p1*x"
         parameter_names = list(["lamda", "p", "p0", "p1"])
         for j in range(2, self._nvar+1):
             xj = "x%d" % j
@@ -155,12 +156,12 @@ class Polynomial(Model):
             pj = "p%d" % j
             parameter_names.append(pj)
             setattr(self, pj, self.p[:, :, j])
-            state_variable_dfuns[0] += " + %s*%s"(pj, xj)
-        state_variable_dfuns[0] += ")"
+            state_variable_dfuns += " + %s*x^%d" % (pj, j)
+        state_variable_dfuns += ")"
         self.state_variables = tuple(state_variables)
         self.non_integrated_variables = tuple(non_integrated_variables)
         self.state_variable_range = state_variable_range
-        self.state_variable_dfuns = state_variable_dfuns
+        self.state_variable_dfuns = {"x": state_variable_dfuns}
         self.parameter_names = tuple(parameter_names)
 
     def _x_powers(self, x):
@@ -253,22 +254,22 @@ class PolynomialCoupling(SparseCoupling):
             self.p = numpy.concatenate([numpy.zeros(self.p.shape[:3]+(1, )), self.p], axis=-1)
             correct_p0 = True
         if correct_p0:
-            self.p[:, :, 0] = self.p0
+            self.p[:, :, :, 0] = self.p0
         else:
-            self.p0 = self.p[:, :, 0]
-        self.p1 = self.p[:, :, 1]
+            self.p0 = self.p[:, :, :, 0]
+        self.p1 = self.p[:, :, :, 1]
         # Now we have parameter p of polynomial coefficients of shape (regions, regions, modes, polynomial order)
         self.order = int(self.p.shape[-1]) - 1
         for j in range(2, self.p.shape[-1]):
             # Create one extra parameter per polynomial order:
             pj = "p%d" % j
             self.parameter_names.append(pj)
-            setattr(self, pj, self.p[:, :, j])
+            setattr(self, pj, self.p[:, :, :, j])
             self.pre_expr += "%s*x_j**%d" % (pj, j)
 
     def configure(self):
         """Set the right indirect call."""
-        super(Polynomial, self).configure()
+        super(PolynomialCoupling, self).configure()
         self.update_derived_parameters()
 
     def pre(self, x_i, x_j):
@@ -279,7 +280,7 @@ class PolynomialCoupling(SparseCoupling):
         if self.p_nzw is None:
             # To be executed only the first time to keep only nonzero weights' connections:
             self.p_nzw = self.p[history.nnz_mask, :, :]  # new shape: (nnzw, modes, polynomial order)
-        super(Polynomial, self).__call__(step, history)
+        super(PolynomialCoupling, self).__call__(step, history)
 
     def __str__(self):
         return simple_gen_astr(self, " ".join(self.parameter_names))
