@@ -29,13 +29,12 @@ Generic linear model.
 """
 
 import numpy
-from tvb.basic.neotraits._attr import NArray, Range
 
-from tvb_library.tvb.simulator.common import simple_gen_astr
-from tvb_library.tvb.simulator.coupling import SparseCoupling
+from tvb.basic.neotraits._attr import Attr, NArray, Range, List
 
-from .base import Model
-from tvb.basic.neotraits.api import NArray, List, Range
+from tvb.simulator.common import simple_gen_astr
+from tvb.simulator.coupling import SparseCoupling
+from tvb.simulator.models.base import Model
 
 
 def polyval(x, p):
@@ -107,11 +106,11 @@ class Polynomial(Model):
         default=["c"]
     )
 
-    state_variable_dfuns = List(
+    state_variable_dfuns = Attr(
         label="Drift functions",
-        default={
+        default=[{
             "x1": "lamda * (p0 + p1*x1)",
-        }
+        }]
     )
 
     parameter_names = List(
