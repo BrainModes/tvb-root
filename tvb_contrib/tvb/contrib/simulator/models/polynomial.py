@@ -39,11 +39,12 @@ from tvb.simulator.models.base import Model
 
 def polyval(x, p):
     """
-    :param x: A value vector of powers of x of shape (regions, modes, order)
+    :param x: A value vector of powers of x of shape (order, regions, modes)
     :param p: Polynomial coefficients of shape (regions or 1, modes or 1, order).
     :return: The evaluation of the polynomials to an output of shape (regions, modes)
     """
-    return numpy.einsum("...j,j...->...", p, x)  # numpy.array([x ** pp for pp in range(p.shape[-1])])
+    # return numpy.sum([p[:, :, ip] * x[ip, :, :]**(ip+1) for ip in range(p.shape[-1])], axis=0)
+    return numpy.einsum("j...,...j->...", p, x).T
 
 
 class Polynomial(Model):
@@ -60,7 +61,7 @@ class Polynomial(Model):
 
     lamda = NArray(
         label=r":math:`\lambda`",
-        default=numpy.array([-0.21]),
+        default=numpy.array([0.21]),
         domain=Range(lo=-1.0, hi=1.0, step=0.001),
         doc="The decaying coefficient specifies how quickly the node's activity relaxes.")
 
@@ -174,17 +175,18 @@ class Polynomial(Model):
         return self._x_powers(state_variables[[0]])
 
     def _polyval(self, x):
-        return polyval(numpy.transpose(x, axes=(1, 2, 0)), self.p[:, :, 1:])
+        return polyval(x, self.p[:, :, 1:])
 
     def dfun(self, state, coupling, local_coupling=0.0):
         """
         .. math::
             \dot x = \lambda (p_0 + p_1 x + ... +  p_k x^k + ... + p_{n-1} x^{n-1} + p_n x^n) + c
         """
-        x, = state
-        c, = coupling
-        dx = self.lamda * (self.p0 + self._polyval(x)) + c + local_coupling * x[0]
-        return numpy.array([dx])
+        x = state
+        c = coupling
+        dx = self.lamda * (self.p0 + self._polyval(x)) + c[0] + local_coupling * x[0]
+        print([c.min(), c.mean(), c.max()])
+        return dx
 
 
 class PolynomialCoupling(SparseCoupling):
@@ -278,9 +280,13 @@ class PolynomialCoupling(SparseCoupling):
 
     def __call__(self, step, history):
         if self.p_nzw is None:
+            dummy = 1.0
+            if self.p.shape[0] == 1 or self.p.shape[1] == 1:
+                dummy = numpy.ones(history.nnz_mask.shape + self.p.shape[2:])
             # To be executed only the first time to keep only nonzero weights' connections:
-            self.p_nzw = self.p[history.nnz_mask, :, :]  # new shape: (nnzw, modes, polynomial order)
-        super(PolynomialCoupling, self).__call__(step, history)
+            dummy *= self.p
+            self.p_nzw = dummy[history.nnz_mask, :, :]  # new shape: (nnzw, modes, polynomial order)
+        return super(PolynomialCoupling, self).__call__(step, history)
 
     def __str__(self):
         return simple_gen_astr(self, " ".join(self.parameter_names))
