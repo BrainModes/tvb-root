@@ -268,12 +268,14 @@ class PolynomialCoupling(SparseCoupling):
         self.p1 = self.p[:, :, :, 1]
         # Now we have parameter p of polynomial coefficients of shape (regions, regions, modes, polynomial order)
         self.order = int(self.p.shape[-1]) - 1
+        parameter_names = list(['p', 'p0', 'p1'])
         for j in range(2, self.p.shape[-1]):
             # Create one extra parameter per polynomial order:
             pj = "p%d" % j
-            self.parameter_names.append(pj)
+            parameter_names.append(pj)
             setattr(self, pj, self.p[:, :, :, j])
-            self.pre_expr += "%s*x_j**%d" % (pj, j)
+            self.pre_expr += " + %s*x_j^%d" % (pj, j)
+        self.parameter_names = list(parameter_names)
 
     def configure(self):
         """Set the right indirect call."""
