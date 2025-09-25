@@ -161,23 +161,27 @@ class TestPolynomialModel(BaseTestCase):
         assert numpy.all(cvar == model.cvar)
         assert parameter_names == model.parameter_names
         assert coupl_pre_expr == coupling.pre_expr
-        try:
-            assert coupl_parameter_names == coupling.parameter_names
-        except Exception as e:
-            print(order)
-            print(coupl_parameter_names)
-            print(coupling.parameter_names)
-            raise e
+        assert coupl_parameter_names == coupling.parameter_names
 
-    def _run_for_order(self, order):
+    def _run_for_order(self, order, pmode="fix"):
         sim = Simulator()
         sim.connectivity = Connectivity.from_file()
         sim.connectivity.configure()
-        sim.connectivity.tract_lengths *= 0
-        p = self.Ps[:order+1]
+        if pmode == "fix":
+            p = self.Ps[:order+1]
+            pdiag = p
+        else:
+            Nregs = sim.connectivity.number_of_regions
+            p = numpy.random.normal(size=(Nregs, Nregs, self.N_MODES, order + 1))
+            pdiag = numpy.einsum("jj...->j...", p)
+            assert pdiag.shape == (Nregs, self.N_MODES, order + 1)
+            jj = numpy.arange(Nregs).astype("i")
+            p[jj, jj] = 0.0
+            assert numpy.all(p[jj, jj] == 0)
         sim.coupling = PolynomialCoupling(p=p)
-        sim.model = Polynomial(p=p)
+        sim.model = Polynomial(p=pdiag)
         sim.model.number_of_modes = self.N_MODES
+        sim.model.configure()
         sim.integrator.dt = 0.1
         sim.simulation_length = 0.2
         sim.initial_conditions = numpy.ones((1, order, sim.connectivity.number_of_regions, sim.model.number_of_modes))
@@ -190,4 +194,5 @@ class TestPolynomialModel(BaseTestCase):
 
     def test_polynomial_model(self):
         for order in range(1, self.ORDER+1):
-            self._run_for_order(order)
+            self._run_for_order(order, pmode="fix")
+            self._run_for_order(order, pmode="fullrandom")
