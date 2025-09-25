@@ -43,8 +43,9 @@ def polyval(x, p):
     :param p: Polynomial coefficients of shape (regions or 1, modes or 1, order).
     :return: The evaluation of the polynomials to an output of shape (regions, modes)
     """
+    # Slower, explicit version for testing:
     # return numpy.sum([p[:, :, ip] * x[ip, :, :]**(ip+1) for ip in range(p.shape[-1])], axis=0)
-    return numpy.einsum("j...,...j->...", p, x).T
+    return numpy.einsum("j...,...j->...", x, p)
 
 
 class Polynomial(Model):
@@ -125,7 +126,7 @@ class Polynomial(Model):
     _nvar = 1
     cvar = numpy.array([0], dtype=numpy.int32)
 
-    def update_derived_parameters(self):
+    def _configure_state_vars_funs_params(self):
         if self.p.ndim == 1:
             # Assuming same polynomial for all regions and modes:
             self.p = self.p[numpy.newaxis, numpy.newaxis, :]
@@ -147,13 +148,17 @@ class Polynomial(Model):
         non_integrated_variables = list()
         default_sv_range = self.state_variable_range[self.state_variables[0]]
         state_variable_range = {"x": default_sv_range}
+        pos_state_variable_range = numpy.array([numpy.maximum(0, default_sv_range[0]), default_sv_range[1]])
         state_variable_dfuns = "lamda * (p0 + p1*x"
         parameter_names = list(["lamda", "p", "p0", "p1"])
         for j in range(2, self._nvar+1):
             xj = "x%d" % j
             state_variables.append(xj)
             non_integrated_variables.append(xj)
-            state_variable_range[xj] = self.state_variable_range.get(xj, default_sv_range)
+            if numpy.mod(j, 2) == 0:
+                state_variable_range[xj] = self.state_variable_range.get(xj, pos_state_variable_range**j)
+            else:
+                state_variable_range[xj] = self.state_variable_range.get(xj, default_sv_range**j)
             pj = "p%d" % j
             parameter_names.append(pj)
             setattr(self, pj, self.p[:, :, j])
@@ -165,11 +170,15 @@ class Polynomial(Model):
         self.state_variable_dfuns = {"x": state_variable_dfuns}
         self.parameter_names = tuple(parameter_names)
 
+    def configure(self):
+        self._configure_state_vars_funs_params()
+        super(Polynomial, self).configure()
+
     def _x_powers(self, x):
         return numpy.concatenate([x] + [x**j for j in range(2, self.nvar+1)], axis=0)
 
-    def update_state_variables_before_integration(self, state_variables, coupling, local_coupling=0.0, stimulus=0.0):
-        return self._x_powers(state_variables[[0]])
+    # def update_state_variables_before_integration(self, state_variables, coupling, local_coupling=0.0, stimulus=0.0):
+    #     return self._x_powers(state_variables[[0]])
 
     def update_state_variables_after_integration(self, state_variables):
         return self._x_powers(state_variables[[0]])
@@ -182,11 +191,8 @@ class Polynomial(Model):
         .. math::
             \dot x = \lambda (p_0 + p_1 x + ... +  p_k x^k + ... + p_{n-1} x^{n-1} + p_n x^n) + c
         """
-        x = state
-        c = coupling
-        dx = self.lamda * (self.p0 + self._polyval(x)) + c[0] + local_coupling * x[0]
-        print([c.min(), c.mean(), c.max()])
-        return dx
+        x = self.update_state_variables_after_integration(state)
+        return self.lamda * (self.p0 + self._polyval(x)) + coupling[0] + local_coupling * x[0]
 
 
 class PolynomialCoupling(SparseCoupling):
@@ -274,9 +280,13 @@ class PolynomialCoupling(SparseCoupling):
         super(PolynomialCoupling, self).configure()
         self.update_derived_parameters()
 
+    def _polyval(self, x_j):
+        return polyval(x_j, self.p_nzw[:, :, 1:])
+
     def pre(self, x_i, x_j):
-        assert x_j.shape[0] == self.order
-        return self.p0 + numpy.einsum("...j,j...->...", self.p_nzw, x_j)
+        # (history.n_cvar, history.n_nnzw, history.n_mode)
+        return numpy.repeat(self.p0 + self._polyval(x_j)[numpy.newaxis],
+                            x_j.shape[0], axis=0)
 
     def __call__(self, step, history):
         if self.p_nzw is None:
