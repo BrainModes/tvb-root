@@ -287,7 +287,7 @@ class PolynomialCoupling(SparseCoupling):
 
     def pre(self, x_i, x_j):
         # (history.n_cvar, history.n_nnzw, history.n_mode)
-        return numpy.repeat(self.p0 + self._polyval(x_j)[numpy.newaxis],
+        return numpy.repeat(self.p0_nzw + self._polyval(x_j)[numpy.newaxis],
                             x_j.shape[0], axis=0)
 
     def __call__(self, step, history):
@@ -298,6 +298,7 @@ class PolynomialCoupling(SparseCoupling):
             # To be executed only the first time to keep only nonzero weights' connections:
             dummy *= self.p
             self.p_nzw = dummy[history.nnz_mask, :, :]  # new shape: (nnzw, modes, polynomial order)
+            self.p0_nzw = numpy.transpose(self.p_nzw[:, :, [0]], axes=(2, 0, 1))
         return super(PolynomialCoupling, self).__call__(step, history)
 
     def __str__(self):
