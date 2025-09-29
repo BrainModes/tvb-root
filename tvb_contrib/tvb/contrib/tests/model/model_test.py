@@ -184,7 +184,8 @@ class TestPolynomialModel(BaseTestCase):
         sim.model.configure()
         sim.integrator.dt = 0.1
         sim.simulation_length = 0.2
-        sim.initial_conditions = numpy.ones((1, order, sim.connectivity.number_of_regions, sim.model.number_of_modes))
+        sim.initial_conditions = \
+            numpy.random.normal(size=(1, order, sim.connectivity.number_of_regions, sim.model.number_of_modes))
         sim.monitors = (Raw(), )
         sim.configure()
         self._configuration(sim.model, sim.coupling, order)
