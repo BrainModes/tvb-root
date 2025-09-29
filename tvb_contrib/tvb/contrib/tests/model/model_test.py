@@ -113,7 +113,7 @@ class TestPolynomialModel(BaseTestCase):
 
     def _polyval(self, x, p):
         assert numpy.allclose(polyval(x, p),
-                              numpy.sum([p[:, :, ip] * x[ip, :, :]**(ip+1) for ip in range(p.shape[-1])], axis=0),
+                              numpy.sum([p[:, :, ip] * x[ip, :, :] for ip in range(p.shape[-1])], axis=0),
                               )
 
     def _configuration(self, model, coupling, order):

@@ -44,7 +44,7 @@ def polyval(x, p):
     :return: The evaluation of the polynomials to an output of shape (regions, modes)
     """
     # Slower, explicit version for testing:
-    # return numpy.sum([p[:, :, ip] * x[ip, :, :]**(ip+1) for ip in range(p.shape[-1])], axis=0)
+    # return numpy.sum([p[:, :, ip] * x[ip, :, :] for ip in range(p.shape[-1])], axis=0)
     return numpy.einsum("j...,...j->...", x, p)
 
 
