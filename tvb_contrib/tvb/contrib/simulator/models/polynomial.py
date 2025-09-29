@@ -62,7 +62,7 @@ class Polynomial(Model):
 
     lamda = NArray(
         label=r":math:`\lambda`",
-        default=numpy.array([0.21]),
+        default=numpy.array([1.0]),
         domain=Range(lo=-1.0, hi=1.0, step=0.001),
         doc="The decaying coefficient specifies how quickly the node's activity relaxes.")
 
