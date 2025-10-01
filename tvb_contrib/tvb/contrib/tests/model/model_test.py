@@ -146,8 +146,10 @@ class TestPolynomialModel(BaseTestCase):
 
     ORDER = 3
     N_MODES = 1
+    VERBOSE = 0
 
-    def __init__(self, connectivity=None, p=None):
+    def __init__(self, connectivity=None, p=None, verbose=0):
+        self.VERBOSE = verbose
         if connectivity is None:
             connectivity = Connectivity.from_file()
             connectivity.weights = numpy.ones(connectivity.weights.shape).astype("f")
@@ -233,7 +235,7 @@ class TestPolynomialModel(BaseTestCase):
         sim.model.number_of_modes = self.N_MODES
         sim.model.configure()
         sim.integrator = EulerDeterministic(dt=0.1)
-        sim.simulation_length = 0.1
+        sim.simulation_length = 1.0
         sim.initial_conditions = \
             0.1*numpy.random.normal(size=(1, order, sim.connectivity.number_of_regions, sim.model.number_of_modes))
         sim.monitors = (Raw(), )
@@ -241,23 +243,30 @@ class TestPolynomialModel(BaseTestCase):
         self._configuration(sim.model, sim.coupling, order)
         self._polyval(sim.initial_conditions[0], sim.model.p[:, :, 1:])
         results = sim.run()
-        assert results[0][1].shape == (1, 1, sim.connectivity.number_of_regions, sim.model.number_of_modes)
+        Ntimes = int(sim.simulation_length/sim.integrator.dt)
+        assert results[0][1].shape == (Ntimes, 1, sim.connectivity.number_of_regions, sim.model.number_of_modes)
         if self.N_MODES == 1:
-            res = results[0][1].squeeze()
-            targres = polyint_Euler(sim, p[:, :, 0, :])[0][1:].squeeze()
+            res = results[0][1][-1].squeeze()
+            targres = polyint_Euler(sim, p[:, :, 0, :])[0][-1].squeeze()
             try:
-                assert numpy.allclose(res, targres, rtol=1e-01, atol=1e-03)
+                if self.VERBOSE > 1:
+                    print("max error = ", numpy.abs(res - targres).max())
+                assert numpy.allclose(res, targres, rtol=1e-02, atol=1e-05)
             except Exception as e:
-                print(numpy.abs(res - targres).max())
-                print(res.shape)
-                print(targres.shape)
-                print([res.min(), res.mean(), res.max()])
-                print([targres.min(), targres.mean(), targres.max()])
-                print(res)
-                print(targres)
+                if self.VERBOSE:
+                    print("polynomial order = ", order)
+                    print("max error = ", numpy.abs(res - targres).max())
+                    print("res.shape = ", res.shape)
+                    print("targres.shape = ", targres.shape)
+                    print("[res.min(), res.mean(), res.max()] = ", [res.min(), res.mean(), res.max()])
+                    print("[targres.min(), targres.mean(), targres.max()] = ",
+                          [targres.min(), targres.mean(), targres.max()])
+                    print("res = ", res)
+                    print("targres = ", targres)
                 raise e
 
     def test_polynomial_model(self):
         for order in range(1, self.ORDER+1):
-            print("order=%d" % order)
+            if self.VERBOSE > 1:
+                print("\npolynomial order=%d" % order)
             self._run_for_order(self.p[:, :, :, :order+1])
