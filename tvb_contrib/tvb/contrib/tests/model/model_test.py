@@ -112,18 +112,26 @@ def polydfun(x, p):
         xp.append(x * xp[-1])
     xp = numpy.array(xp).T
     dx = numpy.zeros(x.shape)
+    coupl = numpy.zeros(x.shape)
     N = x.shape[0]
     for iX in range(N):
         for jX in range(N):
             # dx[iX] += p[iX, jX, 0] + numpy.sum(xp[jX] * p[iX, jX, 1:])  # explicit
-            try:
+            if iX == jX:
                 dx[iX] += p[iX, jX, 0] + numpy.einsum("j,j->...", xp[jX], p[iX, jX, 1:])
-            except Exception as e:
-                print(xp.shape)
-                print(p.shape)
-                print(xp[jX].shape)
-                print(p[iX, jX, 1:].shape)
-                raise e
+            else:
+                coupl[iX] += p[iX, jX, 0] + numpy.einsum("j,j->...", xp[jX], p[iX, jX, 1:])
+    # print("node [min, mean, max] = ", [dx.min(), dx.mean(), dx.max()])
+    # print("node = ", dx)
+    # print("node.dtype = ", dx.dtype)
+    coupl = numpy.array(coupl).astype("float32")
+    # print("coupl [min, mean, max] = ", [coupl.min(), coupl.mean(), coupl.max()])
+    # print("coupl = ", coupl)
+    # print("coupl.dtype = ", coupl.dtype)
+    dx += coupl
+    # print("dx [min, mean, max] = ", [dx.min(), dx.mean(), dx.max()])
+    # print("dx = ", dx)
+    # print("dx.dtype = ", dx.dtype)
     return dx
 
 
@@ -147,6 +155,7 @@ class TestPolynomialModel(BaseTestCase):
     ORDER = 3
     N_MODES = 1
     VERBOSE = 0
+    T = 0.2
 
     def __init__(self, connectivity=None, p=None, verbose=0):
         self.VERBOSE = verbose
@@ -235,7 +244,7 @@ class TestPolynomialModel(BaseTestCase):
         sim.model.number_of_modes = self.N_MODES
         sim.model.configure()
         sim.integrator = EulerDeterministic(dt=0.1)
-        sim.simulation_length = 1.0
+        sim.simulation_length = self.T
         sim.initial_conditions = \
             0.1*numpy.random.normal(size=(1, order, sim.connectivity.number_of_regions, sim.model.number_of_modes))
         sim.monitors = (Raw(), )
@@ -261,8 +270,9 @@ class TestPolynomialModel(BaseTestCase):
                     print("[res.min(), res.mean(), res.max()] = ", [res.min(), res.mean(), res.max()])
                     print("[targres.min(), targres.mean(), targres.max()] = ",
                           [targres.min(), targres.mean(), targres.max()])
-                    print("res = ", res)
-                    print("targres = ", targres)
+                    if self.VERBOSE > 1:
+                        print("res = ", res)
+                        print("targres = ", targres)
                 raise e
 
     def test_polynomial_model(self):

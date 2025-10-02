@@ -29,6 +29,7 @@ Generic linear model.
 """
 
 import numpy
+import numpy as np
 
 from tvb.basic.neotraits._attr import Attr, NArray, Range, List
 
@@ -192,7 +193,18 @@ class Polynomial(Model):
             \dot x = \lambda (p_0 + p_1 x + ... +  p_k x^k + ... + p_{n-1} x^{n-1} + p_n x^n) + c
         """
         x = self.update_state_variables_after_integration(state)
-        return self.lamda * (self.p0 + self._polyval(x)) + coupling[0] + local_coupling * x[0]
+        dx = self.lamda * (self.p0 + self._polyval(x))[np.newaxis]
+        # print("TVB node [min, mean, max] = ", [dx[0].min(), dx[0].mean(), dx[0].max()])
+        # print("TVB node = ", dx[0])
+        # print("TVB node.dtype = ", dx[0].dtype)
+        # print("TVB coupling [min, mean, max] = ", [coupling[0].min(), coupling[0].mean(), coupling[0].max()])
+        # print("TVB coupling = ", coupling[0])
+        # print("TVB coupling.dtype = ", coupling[0].dtype)
+        dx += coupling[[0]] + local_coupling * x[[0]]
+        # print("TVB dx [min, mean, max] = ", [dx[0].min(), dx[0].mean(), dx[0].max()])
+        # print("TVB dx = ", dx[0])
+        # print("TVB dx.dtype = ", dx[0].dtype)
+        return dx
 
 
 class PolynomialCoupling(SparseCoupling):
