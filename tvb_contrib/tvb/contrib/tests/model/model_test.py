@@ -107,7 +107,7 @@ class TestContribModels(BaseTestCase):
 
 def polydfun(x, p):
     order = p.shape[-1] - 1
-    print("x node [min, mean, max] = ", [x.min(), x.mean(), x.max()])
+    # print("x node [min, mean, max] = ", [x.min(), x.mean(), x.max()])
     xp = [x]
     for io in range(2, order + 1):
         xp.append(x * xp[-1])
