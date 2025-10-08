@@ -32,8 +32,9 @@ import numpy
 import numpy as np
 
 from tvb.basic.neotraits._attr import Attr, NArray, Range, List
-
+from tvb.simulator.descriptors import Dim, NDArray
 from tvb.simulator.common import simple_gen_astr
+from tvb.simulator.history import SparseHistory
 from tvb.simulator.coupling import SparseCoupling
 from tvb.simulator.models.base import Model
 
@@ -45,8 +46,8 @@ def polyval(x, p):
     :return: The evaluation of the polynomials to an output of shape (regions, modes)
     """
     # Slower, explicit version for testing:
-    # return numpy.sum([p[:, :, ip] * x[ip, :, :] for ip in range(p.shape[-1])], axis=0)
-    return numpy.einsum("j...,...j->...", x, p)
+    return numpy.sum([p[:, :, ip] * x[ip, :, :] for ip in range(p.shape[-1])], axis=0)
+    # return numpy.einsum("j...,...j->...", x, p)
 
 
 class Polynomial(Model):
@@ -193,6 +194,7 @@ class Polynomial(Model):
             \dot x = \lambda (p_0 + p_1 x + ... +  p_k x^k + ... + p_{n-1} x^{n-1} + p_n x^n) + c
         """
         x = self.update_state_variables_after_integration(state)
+        # print("TVB x node [min, mean, max] = ", [x[0].min(), x[0].mean(), x[0].max()])
         dx = self.lamda * (self.p0 + self._polyval(x))[np.newaxis]
         # print("TVB node [min, mean, max] = ", [dx[0].min(), dx[0].mean(), dx[0].max()])
         # print("TVB node = ", dx[0])
@@ -315,3 +317,15 @@ class PolynomialCoupling(SparseCoupling):
 
     def __str__(self):
         return simple_gen_astr(self, " ".join(self.parameter_names))
+
+
+class SparseHistory64(SparseHistory):
+    n_time, n_node, n_cvar, n_mode = Dim(), Dim(), Dim(), Dim()
+
+    weights = NDArray((n_node, n_node), 'float64')  # type: numpy.ndarray
+    delays = NDArray((n_node, n_node), 'float64')  # type: numpy.ndarray
+    cvars = NDArray((n_cvar,), 'i')  # type: numpy.ndarray
+
+    buffer = NDArray(('n_time', 'n_cvar', 'n_node', 'n_mode'), 'float64', read_only=False)
+    current_state = NDArray(('n_cvar', 'n_node', 'n_mode'), 'float64', read_only=False)
+    delayed_state = NDArray(('n_node', 'n_cvar', 'n_node', 'n_mode'), 'float64', read_only=False)
