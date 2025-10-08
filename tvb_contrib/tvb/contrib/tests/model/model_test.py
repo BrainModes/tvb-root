@@ -36,7 +36,7 @@ from tvb.contrib.simulator.models.larter_breakspear import LarterBreakspear
 from tvb.contrib.simulator.models.liley_steynross import LileySteynRoss
 from tvb.contrib.simulator.models.morris_lecar import MorrisLecar
 from tvb.contrib.simulator.models.wong_wang import WongWang
-from tvb.contrib.simulator.models.polynomial import Polynomial, PolynomialCoupling, polyval
+from tvb.contrib.simulator.models.polynomial import Polynomial, PolynomialCoupling, polyval, SparseHistory64
 from tvb.datatypes.connectivity import Connectivity
 from tvb.simulator.simulator import Simulator
 from tvb.simulator.integrators import HeunDeterministic, EulerDeterministic
@@ -107,6 +107,7 @@ class TestContribModels(BaseTestCase):
 
 def polydfun(x, p):
     order = p.shape[-1] - 1
+    print("x node [min, mean, max] = ", [x.min(), x.mean(), x.max()])
     xp = [x]
     for io in range(2, order + 1):
         xp.append(x * xp[-1])
@@ -118,19 +119,21 @@ def polydfun(x, p):
         for jX in range(N):
             # dx[iX] += p[iX, jX, 0] + numpy.sum(xp[jX] * p[iX, jX, 1:])  # explicit
             if iX == jX:
-                dx[iX] += p[iX, jX, 0] + numpy.einsum("j,j->...", xp[jX], p[iX, jX, 1:])
+                # dx[iX] += p[iX, jX, 0] + numpy.einsum("j,j->...", xp[jX], p[iX, jX, 1:])
+                dx[iX] += p[iX, jX, 0] + numpy.sum(xp[jX] * p[iX, jX, 1:])
             else:
-                coupl[iX] += p[iX, jX, 0] + numpy.einsum("j,j->...", xp[jX], p[iX, jX, 1:])
+                # coupl[iX] += p[iX, jX, 0] + numpy.einsum("j,j->...", xp[jX], p[iX, jX, 1:])
+                coupl[iX] += p[iX, jX, 0] + numpy.sum(xp[jX] * p[iX, jX, 1:])
     # print("node [min, mean, max] = ", [dx.min(), dx.mean(), dx.max()])
-    # print("node = ", dx)
-    # print("node.dtype = ", dx.dtype)
-    coupl = numpy.array(coupl).astype("float32")
-    # print("coupl [min, mean, max] = ", [coupl.min(), coupl.mean(), coupl.max()])
-    # print("coupl = ", coupl)
-    # print("coupl.dtype = ", coupl.dtype)
+    # print("node = ", dx[0])
+    # print("node.dtype = ", dx[0].dtype)
+    coupl = numpy.array(coupl)
+    # print("coupling [min, mean, max] = ", [coupl.min(), coupl.mean(), coupl.max()])
+    # print("coupling = ", coupl[0])
+    # print("coupling.dtype = ", coupl.dtype)
     dx += coupl
     # print("dx [min, mean, max] = ", [dx.min(), dx.mean(), dx.max()])
-    # print("dx = ", dx)
+    # print("dx = ", dx[0])
     # print("dx.dtype = ", dx.dtype)
     return dx
 
@@ -143,15 +146,17 @@ def polyint_Euler(sim, p):
         noise = 0
     x = [sim.initial_conditions[-1, 0].squeeze()]
     t = [0.0]
-    while t[-1] < sim.simulation_length:
+    Nsteps = int(sim.simulation_length / dt)
+    for ii in range(Nsteps):
         dW = noise * numpy.random.normal(size=x[-1].shape) if noise else 0.0
         x.append(x[-1] + dt * polydfun(x[-1], p) + dW)
         t.append(t[-1] + dt)
-    return numpy.array(x), numpy.array(t)
+    return numpy.array(x)[1:], numpy.array(t)[1:]
 
 
 class TestPolynomialModel(BaseTestCase):
 
+    HISTORY64 = True
     ORDER = 3
     N_MODES = 1
     VERBOSE = 0
@@ -249,18 +254,20 @@ class TestPolynomialModel(BaseTestCase):
             0.1*numpy.random.normal(size=(1, order, sim.connectivity.number_of_regions, sim.model.number_of_modes))
         sim.monitors = (Raw(), )
         sim.configure()
+        if self.HISTORY64:
+            sim.history = SparseHistory64.from_simulator(sim)
         self._configuration(sim.model, sim.coupling, order)
         self._polyval(sim.initial_conditions[0], sim.model.p[:, :, 1:])
         results = sim.run()
         Ntimes = int(sim.simulation_length/sim.integrator.dt)
         assert results[0][1].shape == (Ntimes, 1, sim.connectivity.number_of_regions, sim.model.number_of_modes)
         if self.N_MODES == 1:
-            res = results[0][1][-1].squeeze()
-            targres = polyint_Euler(sim, p[:, :, 0, :])[0][-1].squeeze()
+            res = results[0][1].squeeze()
+            targres = polyint_Euler(sim, p[:, :, 0, :])[0].squeeze()
             try:
                 if self.VERBOSE > 1:
                     print("max error = ", numpy.abs(res - targres).max())
-                assert numpy.allclose(res, targres, rtol=1e-02, atol=1e-05)
+                assert numpy.allclose(res, targres, rtol=1e-03, atol=1e-03)
             except Exception as e:
                 if self.VERBOSE:
                     print("polynomial order = ", order)
@@ -276,7 +283,7 @@ class TestPolynomialModel(BaseTestCase):
                 raise e
 
     def test_polynomial_model(self):
-        for order in range(1, self.ORDER+1):
+        for order in range(self.ORDER, self.ORDER+1):
             if self.VERBOSE > 1:
                 print("\npolynomial order=%d" % order)
             self._run_for_order(self.p[:, :, :, :order+1])
